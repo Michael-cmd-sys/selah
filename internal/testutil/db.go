@@ -38,7 +38,9 @@ func NewTestDB(t *testing.T) *dbsqlc.Queries {
 	if _, err := adminDB.Exec(fmt.Sprintf(`CREATE DATABASE "%s"`, dbName)); err != nil {
 		t.Fatalf("create test db: %v", err)
 	}
-	adminDB.Close()
+	if err := adminDB.Close(); err != nil {
+		t.Logf("close admin db: %v", err)
+	}
 
 	// Run migrations
 	migCfg, err := pgx.ParseConfig(testDSN)
@@ -62,8 +64,12 @@ func NewTestDB(t *testing.T) *dbsqlc.Queries {
 		pool.Close()
 		if cleanupCfg, err := pgx.ParseConfig(adminDSN); err == nil {
 			db := stdlib.OpenDB(*cleanupCfg)
-			db.Exec(fmt.Sprintf(`DROP DATABASE "%s" WITH (FORCE)`, dbName))
-			db.Close()
+			if _, err := db.Exec(fmt.Sprintf(`DROP DATABASE "%s" WITH (FORCE)`, dbName)); err != nil {
+				t.Logf("drop test db: %v", err)
+			}
+			if err := db.Close(); err != nil {
+				t.Logf("close cleanup db: %v", err)
+			}
 		}
 	})
 
