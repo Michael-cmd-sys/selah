@@ -477,9 +477,9 @@ LIMIT $2 OFFSET $3
 `
 
 type ListFeedPostsParams struct {
-	Column1 uuid.UUID `db:"column_1" json:"column_1"`
-	Limit   int32     `db:"limit" json:"limit"`
-	Offset  int32     `db:"offset" json:"offset"`
+	Column1 pgtype.UUID `db:"column_1" json:"column_1"`
+	Limit   int32       `db:"limit" json:"limit"`
+	Offset  int32       `db:"offset" json:"offset"`
 }
 
 type ListFeedPostsRow struct {

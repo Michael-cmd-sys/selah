@@ -2,12 +2,13 @@ package testutil
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
 	"github.com/pressly/goose/v3"
 	"github.com/selah/internal/dbsqlc"
@@ -29,20 +30,22 @@ func NewTestDB(t *testing.T) *dbsqlc.Queries {
 	testDSN := replaceDSNDB(base, dbName)
 
 	// Create test database
-	adminDB, err := sql.Open("postgres", adminDSN)
+	adminCfg, err := pgx.ParseConfig(adminDSN)
 	if err != nil {
-		t.Fatalf("open admin db: %v", err)
+		t.Fatalf("parse admin dsn: %v", err)
 	}
+	adminDB := stdlib.OpenDB(*adminCfg)
 	if _, err := adminDB.Exec(fmt.Sprintf(`CREATE DATABASE "%s"`, dbName)); err != nil {
 		t.Fatalf("create test db: %v", err)
 	}
 	adminDB.Close()
 
 	// Run migrations
-	migDB, err := sql.Open("postgres", testDSN)
+	migCfg, err := pgx.ParseConfig(testDSN)
 	if err != nil {
-		t.Fatalf("open test db: %v", err)
+		t.Fatalf("parse test dsn: %v", err)
 	}
+	migDB := stdlib.OpenDB(*migCfg)
 	goose.SetDialect("postgres")
 	if err := goose.Up(migDB, "../../db/migrations"); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -57,9 +60,11 @@ func NewTestDB(t *testing.T) *dbsqlc.Queries {
 
 	t.Cleanup(func() {
 		pool.Close()
-		adminDB2, _ := sql.Open("postgres", adminDSN)
-		adminDB2.Exec(fmt.Sprintf(`DROP DATABASE "%s" WITH (FORCE)`, dbName))
-		adminDB2.Close()
+		if cleanupCfg, err := pgx.ParseConfig(adminDSN); err == nil {
+			db := stdlib.OpenDB(*cleanupCfg)
+			db.Exec(fmt.Sprintf(`DROP DATABASE "%s" WITH (FORCE)`, dbName))
+			db.Close()
+		}
 	})
 
 	return dbsqlc.New(pool)

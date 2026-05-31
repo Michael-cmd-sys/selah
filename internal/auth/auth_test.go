@@ -6,11 +6,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/selah/internal/auth"
 	"github.com/selah/internal/dbsqlc"
 	"github.com/selah/internal/testutil"
 )
+
+func sp(s string) *string { return &s }
 
 func TestPasswordHashAndVerify(t *testing.T) {
 	hash, err := auth.HashPassword("strongpassword")
@@ -60,11 +61,8 @@ func TestCreateUserAndCredentials(t *testing.T) {
 	ctx := context.Background()
 
 	user, err := q.CreateUser(ctx, dbsqlc.CreateUserParams{
-		Email:         pgtype.Text{String: "alice@example.com", Valid: true},
-		Name:          "Alice",
-		AvatarUrl:     pgtype.Text{},
-		GoogleSub:     pgtype.Text{},
-		EmailVerified: false,
+		Email: sp("alice@example.com"),
+		Name:  "Alice",
 	})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
@@ -100,17 +98,14 @@ func TestGetUserByEmail(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := q.CreateUser(ctx, dbsqlc.CreateUserParams{
-		Email:         pgtype.Text{String: "bob@example.com", Valid: true},
-		Name:          "Bob",
-		AvatarUrl:     pgtype.Text{},
-		GoogleSub:     pgtype.Text{},
-		EmailVerified: false,
+		Email: sp("bob@example.com"),
+		Name:  "Bob",
 	})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	user, err := q.GetUserByEmail(ctx, pgtype.Text{String: "bob@example.com", Valid: true})
+	user, err := q.GetUserByEmail(ctx, sp("bob@example.com"))
 	if err != nil {
 		t.Fatalf("GetUserByEmail: %v", err)
 	}
@@ -124,10 +119,10 @@ func TestUpsertGoogleUser(t *testing.T) {
 	ctx := context.Background()
 
 	params := dbsqlc.UpsertGoogleUserParams{
-		GoogleSub: pgtype.Text{String: "google-sub-xyz", Valid: true},
-		Email:     pgtype.Text{String: "carol@gmail.com", Valid: true},
+		GoogleSub: sp("google-sub-xyz"),
+		Email:     sp("carol@gmail.com"),
 		Name:      "Carol",
-		AvatarUrl: pgtype.Text{String: "https://example.com/avatar.jpg", Valid: true},
+		AvatarUrl: sp("https://example.com/avatar.jpg"),
 	}
 
 	u1, err := q.UpsertGoogleUser(ctx, params)
