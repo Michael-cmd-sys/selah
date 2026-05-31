@@ -1,6 +1,7 @@
 package community
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -20,6 +21,47 @@ type Handler struct {
 
 func NewHandler(q *dbsqlc.Queries) *Handler {
 	return &Handler{q: q}
+}
+
+// isMember returns true if userID is a member of groupID.
+func (h *Handler) isMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error) {
+	return h.q.IsGroupMember(ctx, dbsqlc.IsGroupMemberParams{GroupID: groupID, UserID: userID})
+}
+
+// requireGroupAccess loads the group and, if it is private, verifies the caller is a member.
+// Returns false and writes the response if access is denied.
+func (h *Handler) requireGroupAccess(w http.ResponseWriter, r *http.Request, groupID, userID uuid.UUID) (dbsqlc.Group, bool) {
+	group, err := h.q.GetGroupByID(r.Context(), groupID)
+	if err != nil {
+		response.NotFound(w, "group not found")
+		return dbsqlc.Group{}, false
+	}
+	if group.IsPrivate {
+		ok, err := h.isMember(r.Context(), groupID, userID)
+		if err != nil || !ok {
+			response.NotFound(w, "group not found")
+			return dbsqlc.Group{}, false
+		}
+	}
+	return group, true
+}
+
+// requirePostGroupAccess loads the post and, if it belongs to a private group,
+// verifies the caller is a member. Returns false and writes the response if denied.
+func (h *Handler) requirePostGroupAccess(w http.ResponseWriter, r *http.Request, postID, userID uuid.UUID) (dbsqlc.GetPostByIDRow, bool) {
+	post, err := h.q.GetPostByID(r.Context(), postID)
+	if err != nil {
+		response.NotFound(w, "post not found")
+		return dbsqlc.GetPostByIDRow{}, false
+	}
+	if post.GroupID.Valid {
+		ok, err := h.isMember(r.Context(), post.GroupID.Bytes, userID)
+		if err != nil || !ok {
+			response.Forbidden(w, "not a member of this group")
+			return dbsqlc.GetPostByIDRow{}, false
+		}
+	}
+	return post, true
 }
 
 // --- Groups ---
@@ -61,14 +103,14 @@ func (h *Handler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetGroup(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserIDFromCtx(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		response.BadRequest(w, "invalid group id")
 		return
 	}
-	group, err := h.q.GetGroupByID(r.Context(), id)
-	if err != nil {
-		response.NotFound(w, "group not found")
+	group, ok := h.requireGroupAccess(w, r, id, userID)
+	if !ok {
 		return
 	}
 	response.OK(w, group)
@@ -91,6 +133,17 @@ func (h *Handler) JoinGroup(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid group id")
 		return
 	}
+
+	group, err := h.q.GetGroupByID(r.Context(), id)
+	if err != nil {
+		response.NotFound(w, "group not found")
+		return
+	}
+	if group.IsPrivate {
+		response.Forbidden(w, "this group is invite-only")
+		return
+	}
+
 	if err := h.q.JoinGroup(r.Context(), dbsqlc.JoinGroupParams{GroupID: id, UserID: userID}); err != nil {
 		response.Internal(w, "could not join group")
 		return
@@ -143,6 +196,11 @@ func (h *Handler) CreateChallenge(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(*req.GroupID)
 		if err != nil {
 			response.BadRequest(w, "invalid groupId")
+			return
+		}
+		ok, err := h.isMember(r.Context(), id, userID)
+		if err != nil || !ok {
+			response.Forbidden(w, "not a member of this group")
 			return
 		}
 		groupID = pgtype.UUID{Bytes: id, Valid: true}
@@ -217,6 +275,11 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 			response.BadRequest(w, "invalid groupId")
 			return
 		}
+		ok, err := h.isMember(r.Context(), id, userID)
+		if err != nil || !ok {
+			response.Forbidden(w, "not a member of this group")
+			return
+		}
 		groupID = pgtype.UUID{Bytes: id, Valid: true}
 	}
 
@@ -236,6 +299,7 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListFeed(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserIDFromCtx(r.Context())
 	limit, _ := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 32)
 	offset, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 32)
 	if limit <= 0 || limit > 50 {
@@ -244,9 +308,15 @@ func (h *Handler) ListFeed(w http.ResponseWriter, r *http.Request) {
 
 	var groupIDParam uuid.UUID
 	if gid := r.URL.Query().Get("groupId"); gid != "" {
-		if id, err := uuid.Parse(gid); err == nil {
-			groupIDParam = id
+		id, err := uuid.Parse(gid)
+		if err != nil {
+			response.BadRequest(w, "invalid groupId")
+			return
 		}
+		if _, ok := h.requireGroupAccess(w, r, id, userID); !ok {
+			return
+		}
+		groupIDParam = id
 	}
 
 	posts, err := h.q.ListFeedPosts(r.Context(), dbsqlc.ListFeedPostsParams{
@@ -289,6 +359,10 @@ func (h *Handler) AddReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := h.requirePostGroupAccess(w, r, postID, userID); !ok {
+		return
+	}
+
 	var req reactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.BadRequest(w, "invalid request body")
@@ -312,6 +386,10 @@ func (h *Handler) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := h.requirePostGroupAccess(w, r, postID, userID); !ok {
+		return
+	}
+
 	if err := h.q.RemoveReaction(r.Context(), dbsqlc.RemoveReactionParams{
 		PostID: postID, UserID: userID, ReactionType: r.URL.Query().Get("type"),
 	}); err != nil {
@@ -328,9 +406,13 @@ type createCommentRequest struct {
 }
 
 func (h *Handler) ListComments(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserIDFromCtx(r.Context())
 	postID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		response.BadRequest(w, "invalid post id")
+		return
+	}
+	if _, ok := h.requirePostGroupAccess(w, r, postID, userID); !ok {
 		return
 	}
 	comments, err := h.q.ListComments(r.Context(), postID)
@@ -346,6 +428,10 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	postID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		response.BadRequest(w, "invalid post id")
+		return
+	}
+
+	if _, ok := h.requirePostGroupAccess(w, r, postID, userID); !ok {
 		return
 	}
 
