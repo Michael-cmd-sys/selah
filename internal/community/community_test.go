@@ -9,14 +9,13 @@ import (
 	"github.com/selah/internal/testutil"
 )
 
+func sp(s string) *string { return &s }
+
 func seedUser(t *testing.T, q *dbsqlc.Queries, email, name string) dbsqlc.User {
 	t.Helper()
 	u, err := q.CreateUser(context.Background(), dbsqlc.CreateUserParams{
-		Email:         pgtype.Text{String: email, Valid: true},
-		Name:          name,
-		AvatarUrl:     pgtype.Text{},
-		GoogleSub:     pgtype.Text{},
-		EmailVerified: false,
+		Email: sp(email),
+		Name:  name,
 	})
 	if err != nil {
 		t.Fatalf("seedUser: %v", err)
@@ -33,10 +32,9 @@ func TestCreateGroupAndJoin(t *testing.T) {
 
 	group, err := q.CreateGroup(ctx, dbsqlc.CreateGroupParams{
 		Name:        "Morning Warriors",
-		Description: pgtype.Text{String: "Early risers", Valid: true},
+		Description: sp("Early risers"),
 		CreatorID:   creator.ID,
 		IsPrivate:   false,
-		AvatarUrl:   pgtype.Text{},
 	})
 	if err != nil {
 		t.Fatalf("CreateGroup: %v", err)
@@ -45,11 +43,9 @@ func TestCreateGroupAndJoin(t *testing.T) {
 		t.Errorf("want Morning Warriors, got %s", group.Name)
 	}
 
-	// Creator joins their group
 	if err := q.JoinGroup(ctx, dbsqlc.JoinGroupParams{GroupID: group.ID, UserID: creator.ID}); err != nil {
 		t.Fatalf("JoinGroup (creator): %v", err)
 	}
-	// Member joins
 	if err := q.JoinGroup(ctx, dbsqlc.JoinGroupParams{GroupID: group.ID, UserID: member.ID}); err != nil {
 		t.Fatalf("JoinGroup (member): %v", err)
 	}
@@ -62,7 +58,6 @@ func TestCreateGroupAndJoin(t *testing.T) {
 		t.Error("member should be in group")
 	}
 
-	// Leave
 	if err := q.LeaveGroup(ctx, dbsqlc.LeaveGroupParams{GroupID: group.ID, UserID: member.ID}); err != nil {
 		t.Fatalf("LeaveGroup: %v", err)
 	}
@@ -80,12 +75,10 @@ func TestCreatePostAndReactions(t *testing.T) {
 	reactor := seedUser(t, q, "reactor@example.com", "Reactor")
 
 	post, err := q.CreatePost(ctx, dbsqlc.CreatePostParams{
-		UserID:    author.ID,
-		GroupID:   pgtype.UUID{},
-		PostType:  "praise",
-		Content:   "Finally hit a 7-day streak! God is good!",
-		VerseRef:  pgtype.Text{},
-		VerseText: pgtype.Text{},
+		UserID:   author.ID,
+		GroupID:  pgtype.UUID{},
+		PostType: "praise",
+		Content:  "Finally hit a 7-day streak! God is good!",
 	})
 	if err != nil {
 		t.Fatalf("CreatePost: %v", err)
@@ -94,7 +87,6 @@ func TestCreatePostAndReactions(t *testing.T) {
 		t.Errorf("want post_type praise, got %s", post.PostType)
 	}
 
-	// Add reactions
 	if err := q.AddReaction(ctx, dbsqlc.AddReactionParams{
 		PostID: post.ID, UserID: reactor.ID, ReactionType: "amen",
 	}); err != nil {
@@ -121,7 +113,6 @@ func TestCreatePostAndReactions(t *testing.T) {
 		t.Errorf("want 2 reaction types, got %d", len(reactions))
 	}
 
-	// Remove reaction
 	if err := q.RemoveReaction(ctx, dbsqlc.RemoveReactionParams{
 		PostID: post.ID, UserID: reactor.ID, ReactionType: "amen",
 	}); err != nil {
@@ -141,12 +132,10 @@ func TestCreateCommentAndDelete(t *testing.T) {
 	user := seedUser(t, q, "commenter@example.com", "Commenter")
 
 	post, err := q.CreatePost(ctx, dbsqlc.CreatePostParams{
-		UserID:    user.ID,
-		GroupID:   pgtype.UUID{},
-		PostType:  "prayer_request",
-		Content:   "Please pray for my interview",
-		VerseRef:  pgtype.Text{},
-		VerseText: pgtype.Text{},
+		UserID:   user.ID,
+		GroupID:  pgtype.UUID{},
+		PostType: "prayer_request",
+		Content:  "Please pray for my interview",
 	})
 	if err != nil {
 		t.Fatalf("CreatePost: %v", err)

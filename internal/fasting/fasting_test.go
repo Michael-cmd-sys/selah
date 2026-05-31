@@ -4,19 +4,17 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/selah/internal/dbsqlc"
 	"github.com/selah/internal/testutil"
 )
 
+func sp(s string) *string { return &s }
+
 func seedUser(t *testing.T, q *dbsqlc.Queries, email, name string) dbsqlc.User {
 	t.Helper()
 	user, err := q.CreateUser(context.Background(), dbsqlc.CreateUserParams{
-		Email:         pgtype.Text{String: email, Valid: true},
-		Name:          name,
-		AvatarUrl:     pgtype.Text{},
-		GoogleSub:     pgtype.Text{},
-		EmailVerified: false,
+		Email: sp(email),
+		Name:  name,
 	})
 	if err != nil {
 		t.Fatalf("seedUser: %v", err)
@@ -41,7 +39,6 @@ func TestStartAndEndFast(t *testing.T) {
 		t.Error("fast should not be ended on creation")
 	}
 
-	// Get active fast
 	active, err := q.GetActiveFast(ctx, user.ID)
 	if err != nil {
 		t.Fatalf("GetActiveFast: %v", err)
@@ -50,7 +47,6 @@ func TestStartAndEndFast(t *testing.T) {
 		t.Error("active fast ID mismatch")
 	}
 
-	// End fast
 	ended, err := q.EndFast(ctx, dbsqlc.EndFastParams{ID: fast.ID, UserID: user.ID})
 	if err != nil {
 		t.Fatalf("EndFast: %v", err)
@@ -59,7 +55,6 @@ func TestStartAndEndFast(t *testing.T) {
 		t.Error("fast should be marked ended")
 	}
 
-	// No active fast now
 	_, err = q.GetActiveFast(ctx, user.ID)
 	if err == nil {
 		t.Error("expected no active fast after ending")
@@ -81,7 +76,7 @@ func TestFastCheckins(t *testing.T) {
 		FastID:     fast.ID,
 		UserID:     user.ID,
 		Mood:       "peaceful",
-		Reflection: pgtype.Text{String: "Feeling close to God", Valid: true},
+		Reflection: sp("Feeling close to God"),
 	})
 	if err != nil {
 		t.Fatalf("AddCheckin: %v", err)

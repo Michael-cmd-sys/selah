@@ -306,7 +306,7 @@ func (h *Handler) ListFeed(w http.ResponseWriter, r *http.Request) {
 		limit = 20
 	}
 
-	var groupIDParam uuid.UUID
+	var groupIDParam pgtype.UUID // null by default — shows all posts
 	if gid := r.URL.Query().Get("groupId"); gid != "" {
 		id, err := uuid.Parse(gid)
 		if err != nil {
@@ -316,7 +316,7 @@ func (h *Handler) ListFeed(w http.ResponseWriter, r *http.Request) {
 		if _, ok := h.requireGroupAccess(w, r, id, userID); !ok {
 			return
 		}
-		groupIDParam = id
+		groupIDParam = pgtype.UUID{Bytes: id, Valid: true}
 	}
 
 	posts, err := h.q.ListFeedPosts(r.Context(), dbsqlc.ListFeedPostsParams{
