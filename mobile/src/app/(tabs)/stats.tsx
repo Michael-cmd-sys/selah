@@ -1,4 +1,4 @@
-import { StatsScreen } from "../../features/stats/StatsScreen";
+import { StatsScreen } from "@/features/stats/StatsScreen";
 
 export default function Page() {
   return <StatsScreen />;

@@ -1,4 +1,4 @@
-import { BibleScreen } from "../../features/bible/BibleScreen";
+import { BibleScreen } from "@/features/bible/BibleScreen";
 
 export default function Page() {
   return <BibleScreen />;
